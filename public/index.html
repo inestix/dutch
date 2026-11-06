@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Dutch en ligne</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Accueil -->
+  <section id="home" class="screen">
+    <div class="panel">
+      <h1 class="logo">Dutch<span>.</span></h1>
+      <p class="tagline">Le jeu de cartes où on retient tout… ou rien.</p>
+      <label>Ton pseudo
+        <input id="name" maxlength="16" placeholder="Ex : Inès" autocomplete="off">
+      </label>
+      <button id="btn-create" class="btn primary">Créer une partie</button>
+      <div class="sep"><span>ou</span></div>
+      <div class="row">
+        <input id="code" maxlength="5" placeholder="CODE" autocomplete="off">
+        <button id="btn-join" class="btn">Rejoindre</button>
+      </div>
+      <p id="home-error" class="error"></p>
+      <details class="rules">
+        <summary>Rappel des règles</summary>
+        <ul>
+          <li>4 cartes face cachée. Au début, on regarde ses 2 cartes du bas.</li>
+          <li>À ton tour : pioche, puis échange avec une de tes cartes ou défausse.</li>
+          <li>Défausser depuis la pioche active un pouvoir : <b>7</b> regarder une de ses cartes · <b>10</b> regarder la carte d'un autre · <b>Valet</b> échanger 2 cartes à l'aveugle · <b>Roi noir</b> échanger 2 cartes au choix et regarder celle qu'on récupère.</li>
+          <li>⚡ Défausse rapide à tout moment sur une carte de même valeur. Ta carte : erreur = 2 pénalités. Carte d'un autre : il reçoit un remplacement + 1 pénalité ; erreur = 1 pénalité pour toi.</li>
+          <li>Valeurs : Joker −1 · Roi rouge 0 · As 1 · 2–10 · Valet 11 · Dame 12 · Roi noir 13.</li>
+          <li>« Dutch ! » en début de tour : les autres jouent un dernier tour. Si tu n'as pas le plus petit score, tes points sont doublés.</li>
+          <li>La partie s'arrête quand quelqu'un atteint 200 points. Le plus bas total gagne.</li>
+        </ul>
+      </details>
+    </div>
+  </section>
+
+  <!-- Salon -->
+  <section id="lobby" class="screen hidden">
+    <div class="panel">
+      <p class="muted">Code du salon</p>
+      <button id="lobby-code" class="code-big" title="Copier le lien"></button>
+      <p class="muted small">Partage ce code (ou clique pour copier le lien d'invitation).</p>
+      <ul id="lobby-players"></ul>
+      <p id="lobby-info" class="muted"></p>
+      <button id="btn-start" class="btn primary">Lancer la partie</button>
+      <button id="btn-leave" class="btn ghost">Quitter</button>
+      <p id="lobby-error" class="error"></p>
+    </div>
+  </section>
+
+  <!-- Table de jeu -->
+  <section id="table" class="screen hidden">
+    <header class="topbar">
+      <span class="logo small-logo">Dutch<span>.</span></span>
+      <span id="round-info"></span>
+      <button id="btn-log" class="btn tiny ghost">Journal</button>
+    </header>
+    <div id="opponents"></div>
+    <div id="center">
+      <div class="pile">
+        <div id="deck" class="card back"></div>
+        <span class="pile-label" id="deck-count"></span>
+      </div>
+      <div class="pile">
+        <div id="discard"></div>
+        <span class="pile-label">Défausse</span>
+      </div>
+      <div class="pile" id="drawn-wrap">
+        <div id="drawn"></div>
+        <span class="pile-label" id="drawn-label"></span>
+      </div>
+    </div>
+    <div id="prompt">
+      <p id="prompt-text"></p>
+      <div id="prompt-actions"></div>
+    </div>
+    <div id="me-seat"></div>
+    <div id="fast-bar">
+      <button id="btn-fast" class="btn fast">⚡ Défausse rapide</button>
+    </div>
+    <aside id="log" class="hidden"></aside>
+    <div id="overlay" class="hidden"></div>
+    <div id="toast"></div>
+  </section>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
