@@ -122,11 +122,36 @@ function renderLobby() {
 
 function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
+// Position des symboles (x %, y %) selon la valeur, comme sur un vrai jeu de cartes
+const L = 33, C = 50, R = 67;
+const PIPS = {
+  1: [[C, 50]],
+  2: [[C, 20], [C, 80]],
+  3: [[C, 20], [C, 50], [C, 80]],
+  4: [[L, 20], [R, 20], [L, 80], [R, 80]],
+  5: [[L, 20], [R, 20], [C, 50], [L, 80], [R, 80]],
+  6: [[L, 20], [R, 20], [L, 50], [R, 50], [L, 80], [R, 80]],
+  7: [[L, 20], [R, 20], [C, 35], [L, 50], [R, 50], [L, 80], [R, 80]],
+  8: [[L, 20], [R, 20], [C, 35], [L, 50], [R, 50], [C, 65], [L, 80], [R, 80]],
+  9: [[L, 20], [R, 20], [L, 40], [R, 40], [C, 50], [L, 60], [R, 60], [L, 80], [R, 80]],
+  10: [[L, 20], [R, 20], [C, 30], [L, 40], [R, 40], [L, 60], [R, 60], [C, 70], [L, 80], [R, 80]],
+};
+
 function cardFace(c, extra = '') {
-  if (c.rank === 'JK') return `<div class="card joker ${extra}"><span class="rk">★</span><span class="st">🃏</span>${c.value !== undefined ? `<span class="val">${c.value}</span>` : ''}</div>`;
+  const val = c.value !== undefined ? `<span class="val">${c.value}</span>` : '';
+  if (c.rank === 'JK') {
+    return `<div class="card joker ${extra}"><span class="ix">★</span><span class="star">★</span><span class="jk">JOKER</span>${val}</div>`;
+  }
   const red = c.suit === '♥' || c.suit === '♦';
   const rk = { J: 'V', Q: 'D', K: 'R' }[c.rank] || c.rank;
-  return `<div class="card ${red ? 'red' : ''} ${extra}"><span class="rk">${rk}</span><span class="st">${c.suit}</span>${c.value !== undefined ? `<span class="val">${c.value}</span>` : ''}</div>`;
+  const ix = `<span class="ix">${rk}<small>${c.suit}</small></span><span class="ix ix2">${rk}<small>${c.suit}</small></span>`;
+  if (['J', 'Q', 'K'].includes(c.rank)) {
+    return `<div class="card court ${red ? 'red' : ''} ${extra}">${ix}<div class="face"><span class="big">${rk}</span><small>${c.suit}</small></div>${val}</div>`;
+  }
+  const n = c.rank === 'A' ? 1 : parseInt(c.rank, 10);
+  const pips = PIPS[n].map(([x, y]) =>
+    `<span class="pip${n === 1 ? ' ace' : ''}${y > 50 ? ' down' : ''}" style="left:${x}%;top:${y}%">${c.suit}</span>`).join('');
+  return `<div class="card ${red ? 'red' : ''} ${extra}">${ix}<div class="pips">${pips}</div>${val}</div>`;
 }
 
 // Placement : 0 1 en haut, 2 3 en bas, cartes supplémentaires à droite
@@ -315,7 +340,10 @@ function layoutRing() {
   const meTop = seats[0] ? seats[0].offsetTop - seats[0].offsetHeight / 2 : H;
   const topSeat = n % 2 === 0 ? seats[n / 2] : null;
   const topBottom = topSeat ? topSeat.offsetTop + topSeat.offsetHeight / 2 : 0;
-  center.style.top = `${(topBottom + meTop) / 2}px`;
+  const half = center.offsetHeight / 2;
+  // Jamais par-dessus ma main : on remonte le centre si la place manque
+  const y = Math.min((topBottom + meTop) / 2, meTop - 10 - half);
+  center.style.top = `${Math.max(half, y)}px`;
 }
 window.addEventListener('resize', () => S?.game && layoutRing());
 
