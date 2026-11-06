@@ -135,6 +135,7 @@ class Game {
         if (this.dutchBy) return 'Dutch a déjà été annoncé';
         this.dutchBy = pid;
         this.addLog(`📣 ${me.name} annonce DUTCH ! Dernier tour pour les autres.`);
+        this.emit('all', 'fx', { kind: 'dutch', by: pid });
         this.endTurn();
         return null;
       }
@@ -147,6 +148,7 @@ class Game {
         this.discard.push(old);
         this.drawn = null;
         this.highlight('swap', [t]);
+        this.emit('all', 'fx', { kind: 'replace', by: pid, target: t, old });
         this.addLog(`${me.name} remplace sa carte n°${a.slot + 1} et défausse ${label(old)}.`);
         this.endTurn();
         return null;
@@ -198,7 +200,8 @@ class Game {
       if (p === '10' && t.pid === pid) return "Le 10 sert à regarder la carte d'un autre joueur";
       this.emit(pid, 'peek', { cards: [{ ...t, card: this.get(t.pid).hand[t.slot] }] });
       this.highlight('look', [t]);
-      this.addLog(`👁 ${me.name} regarde ${this.slotName(t.pid, t.slot)}.`);
+      this.addLog(`👁 ${me.name} regarde ${t.pid === pid ? 'une de ses cartes' : `une carte de ${this.get(t.pid).name}`}.`);
+      this.emit('all', 'fx', { kind: 'look', by: pid, target: t });
       this.endTurn();
       return null;
     }
@@ -210,7 +213,9 @@ class Game {
       const pa = this.get(a.pid), pb = this.get(b.pid);
       [pa.hand[a.slot], pb.hand[b.slot]] = [pb.hand[b.slot], pa.hand[a.slot]];
       this.highlight('swap', [a, b]);
-      this.addLog(`🔄 ${me.name} échange ${this.slotName(a.pid, a.slot)} et ${this.slotName(b.pid, b.slot)}.`);
+      this.emit('all', 'fx', { kind: 'swap', by: pid, a, b, power: p });
+      const whose = (t) => (t.pid === pid ? 'sa carte' : `la carte de ${this.get(t.pid).name}`);
+      this.addLog(`🔄 ${me.name} échange ${whose(a)} et ${whose(b)} (${p === 'J' ? 'Valet' : 'Roi noir'}).`);
       // Roi noir : on regarde la carte qu'on a récupérée (si une de ses cartes fait partie de l'échange)
       if (p === 'K') {
         const mine = [a, b].filter((t) => t.pid === pid);

@@ -60,29 +60,31 @@
       <span id="round-info"></span>
       <button id="btn-log" class="btn tiny ghost">Journal</button>
     </header>
-    <div id="opponents"></div>
-    <div id="center">
-      <div class="pile">
-        <div id="deck" class="card back"></div>
-        <span class="pile-label" id="deck-count"></span>
-      </div>
-      <div class="pile">
-        <div id="discard"></div>
-        <span class="pile-label">Défausse</span>
-      </div>
-      <div class="pile" id="drawn-wrap">
-        <div id="drawn"></div>
-        <span class="pile-label" id="drawn-label"></span>
+    <div id="ring">
+      <div id="seats"></div>
+      <div id="center">
+        <div id="piles">
+          <div class="pile">
+            <div id="deck" class="card back"></div>
+            <span class="pile-label" id="deck-count"></span>
+          </div>
+          <div class="pile">
+            <div id="discard"></div>
+            <span class="pile-label">Défausse</span>
+          </div>
+          <div class="pile" id="drawn-wrap">
+            <div id="drawn"></div>
+            <span class="pile-label" id="drawn-label"></span>
+          </div>
+        </div>
+        <div id="prompt">
+          <p id="prompt-text"></p>
+          <div id="prompt-actions"></div>
+        </div>
+        <button id="btn-fast" class="btn fast">⚡ Défausse rapide</button>
       </div>
     </div>
-    <div id="prompt">
-      <p id="prompt-text"></p>
-      <div id="prompt-actions"></div>
-    </div>
-    <div id="me-seat"></div>
-    <div id="fast-bar">
-      <button id="btn-fast" class="btn fast">⚡ Défausse rapide</button>
-    </div>
+    <div id="banner"></div>
     <aside id="log" class="hidden"></aside>
     <div id="overlay" class="hidden"></div>
     <div id="toast"></div>

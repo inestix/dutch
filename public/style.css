@@ -11,10 +11,12 @@
   --danger: #ff6b6b;
   --panel: rgba(8, 36, 25, 0.82);
   --radius: 10px;
-  --cw: 62px;
-  --ch: 88px;
-  --ocw: 40px;
-  --och: 57px;
+  --cw: 66px;
+  --ch: 93px;
+  --ocw: 44px;
+  --och: 62px;
+  --dw: 92px;
+  --dh: 129px;
 }
 
 * { box-sizing: border-box; }
@@ -87,7 +89,12 @@ input:focus { border-color: var(--gold); }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 #round-info { color: var(--muted); font-size: 13px; text-align: center; }
 
-#opponents { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+/* Disposition mobile / tablette : adversaires en haut, centre, puis moi */
+#ring { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: flex-start; }
+#seats { display: contents; }
+#seats .seat { order: 1; }
+#center { order: 2; flex-basis: 100%; display: flex; flex-direction: column; gap: 10px; }
+#seats .seat.mine { order: 3; margin: 0 auto; }
 .seat {
   background: rgba(0,0,0,.18); border-radius: 14px; padding: 8px 10px; display: flex; flex-direction: column; align-items: center; gap: 6px;
   border: 2px solid transparent; transition: border-color .2s, box-shadow .2s;
@@ -100,7 +107,6 @@ input:focus { border-color: var(--gold); }
 .hand { display: grid; gap: 5px; grid-auto-columns: var(--ocw); grid-auto-rows: var(--och); }
 .mine .hand { grid-auto-columns: var(--cw); grid-auto-rows: var(--ch); gap: 8px; }
 
-#me-seat { align-self: center; padding: 10px 14px; }
 
 /* Cartes */
 .card {
@@ -135,12 +141,15 @@ input:focus { border-color: var(--gold); }
   100% { box-shadow: 0 0 0 14px rgba(242,193,78,0); transform: scale(1); }
 }
 
-#center { display: flex; justify-content: center; align-items: flex-end; gap: 22px; padding: 6px 0; }
+#piles { display: flex; justify-content: center; align-items: flex-end; gap: 22px; padding: 6px 0; }
 .pile { display: flex; flex-direction: column; align-items: center; gap: 4px; }
 .pile-label { font-size: 12px; color: var(--muted); }
-#drawn .card { box-shadow: 0 0 0 3px var(--gold), 0 6px 16px rgba(0,0,0,.4); }
+#drawn .card { width: var(--dw); height: var(--dh); border-radius: 10px; box-shadow: 0 0 0 3px var(--gold), 0 8px 22px rgba(0,0,0,.45); }
+#drawn .card .rk { font-size: 22px; top: 6px; left: 8px; }
+#drawn .card .st { font-size: 44px; }
 
 #prompt {
+  max-width: 560px; width: 100%; margin: 0 auto;
   background: var(--panel); border-radius: 14px; padding: 12px 14px; text-align: center; display: flex; flex-direction: column; gap: 10px;
 }
 #prompt-text { margin: 0; font-size: 15px; }
@@ -170,8 +179,53 @@ input:focus { border-color: var(--gold); }
 }
 #toast.show { transform: translateX(-50%) translateY(0); }
 
+/* Effets d'échange */
+.card.swapped { box-shadow: 0 0 0 3px #4fc3f7, 0 0 22px 4px rgba(79,195,247,.75); animation: swapglow 1s ease-in-out 4; }
+.card.swapped::after, .card.replaced::after, .card.looked::after {
+  position: absolute; top: -10px; right: -10px; width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,.4);
+}
+.card.swapped::after { content: '⇄'; background: #4fc3f7; color: #04293a; }
+.card.replaced { box-shadow: 0 0 0 3px var(--gold), 0 0 18px rgba(242,193,78,.7); }
+.card.replaced::after { content: '↻'; background: var(--gold); color: #2b2000; }
+.card.looked { box-shadow: 0 0 0 3px #c39bff, 0 0 16px rgba(195,155,255,.7); }
+.card.looked::after { content: '👁'; background: #c39bff; }
+@keyframes swapglow { 50% { box-shadow: 0 0 0 3px #4fc3f7, 0 0 32px 10px rgba(79,195,247,.9); } }
+.card.flying { position: fixed; z-index: 50; pointer-events: none; margin: 0; box-shadow: 0 10px 24px rgba(0,0,0,.5); }
+
+#banner {
+  position: fixed; left: 50%; top: 12px; transform: translate(-50%, -160%); z-index: 35; max-width: calc(100vw - 32px);
+  background: #fff8e6; color: #2b2000; padding: 12px 20px; border-radius: 12px; font-size: 16px; text-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,.4); transition: transform .3s ease;
+}
+#banner.show { transform: translate(-50%, 0); }
+#banner.swap { background: #e3f6ff; color: #04293a; border: 2px solid #4fc3f7; }
+#banner.dutch { background: var(--red); color: #fff; font-size: 18px; }
+
+/* Ordinateur : joueurs en cercle autour de la pioche */
+@media (min-width: 1000px) {
+  :root { --cw: 78px; --ch: 110px; --ocw: 60px; --och: 85px; --dw: 118px; --dh: 166px; }
+  #table { max-width: 1400px; height: 100vh; padding-bottom: 8px; }
+  #ring { display: block; position: relative; flex: 1; min-height: 640px; }
+  #seats .seat { position: absolute; transform: translate(-50%, -50%); }
+  #center {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    width: min(440px, 36%); gap: 10px;
+  }
+  #prompt { padding: 10px 12px; }
+  .card .rk { font-size: 15px; }
+  .card .st { font-size: 28px; }
+  .mine .card .rk, #center .card .rk { font-size: 18px; }
+  .mine .card .st, #center .card .st { font-size: 34px; }
+  #drawn .card .rk { font-size: 24px; }
+  #drawn .card .st { font-size: 52px; }
+  .seat-head { font-size: 14px; }
+  .seat-head .nm { max-width: 150px; }
+}
+
 @media (max-width: 560px) {
-  :root { --cw: 54px; --ch: 76px; --ocw: 32px; --och: 46px; }
+  :root { --cw: 56px; --ch: 79px; --ocw: 34px; --och: 48px; --dw: 76px; --dh: 106px; }
+
   #table { padding: 6px 12px 12px; }
   .card .rk { font-size: 11px; }
   .card .st { font-size: 16px; }

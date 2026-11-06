@@ -1,6 +1,7 @@
 /* Client du Dutch en ligne */
 const socket = io();
 const $ = (id) => document.getElementById(id);
+const btnFast = $('btn-fast');
 const TOKEN_KEY = 'dutch-token';
 const PEEK_MS = 4000;
 const FLASH_MS = 2500;
@@ -66,7 +67,7 @@ socket.on('state', (s) => {
   S = s;
   const g = s.game;
   if (!g || g.phase !== 'play') { fastMode = false; sel = []; }
-  if (g && prevPhase !== g.phase && g.phase === 'peek') { peeks.clear(); flashes.clear(); }
+  if (g && prevPhase !== g.phase && g.phase === 'peek') { peeks.clear(); flashes.clear(); marks.clear(); }
   if (g && g.step !== 'power') sel = [];
   if (g?.highlight && g.highlight.seq !== hlSeq) {
     hlSeq = g.highlight.seq;
@@ -160,6 +161,8 @@ function renderHand(p, interactive = true) {
     const cls = [];
     const hl = now < hlUntil && g.highlight?.slots?.some((t) => t.pid === p.id && t.slot === i);
     if (hl) cls.push('hl');
+    const mk = interactive && marks.get(key);
+    if (mk && mk.until > now) cls.push(mk.cls);
     if (interactive && isSelectable(p.id, i)) cls.push('selectable');
     if (sel.some((t) => t.pid === p.id && t.slot === i)) cls.push('selected');
     const data = interactive ? `data-pid="${p.id}" data-slot="${i}"` : '';
@@ -210,11 +213,10 @@ function renderTable() {
 
   $('round-info').textContent = `Manche ${g.round} · fin à ${g.scoreLimit} pts`;
 
-  // Adversaires dans l'ordre de jeu, en commençant après moi
-  const i0 = g.players.findIndex((p) => p.id === S.me);
-  const others = g.players.slice(i0 + 1).concat(g.players.slice(0, i0));
-  $('opponents').innerHTML = others.map((p) => seatHtml(p, false)).join('');
-  $('me-seat').innerHTML = me ? seatHtml(me, true) : '';
+  // Joueurs dans l'ordre de jeu, en commençant par moi (k = 0, en bas)
+  const i0 = Math.max(0, g.players.findIndex((p) => p.id === S.me));
+  const ordered = g.players.slice(i0).concat(g.players.slice(0, i0));
+  $('seats').innerHTML = ordered.map((p) => seatHtml(p, p.id === S.me)).join('');
 
   // Centre
   $('deck-count').textContent = `Pioche (${g.deckCount})`;
@@ -275,16 +277,116 @@ function renderTable() {
     b.onclick = fn;
     pa.appendChild(b);
   }
-
-  $('fast-bar').classList.toggle('hidden', g.phase !== 'play');
-  $('btn-fast').classList.toggle('armed', fastMode);
+  // Le bouton de défausse rapide reste dans la même rangée que les autres actions
+  if (g.phase === 'play' && !fastMode) pa.appendChild(btnFast); else btnFast.remove();
+  btnFast.classList.toggle('armed', fastMode);
 
   // Journal
   $('log').innerHTML = g.log.map((l) => `<p>${esc(l)}</p>`).join('');
   $('log').scrollTop = $('log').scrollHeight;
 
+  layoutRing();
   renderOverlay();
 }
+
+/* ---------- Disposition en cercle (ordinateur) ---------- */
+const desktopMQ = window.matchMedia('(min-width: 1000px)');
+function layoutRing() {
+  const seats = [...document.querySelectorAll('#seats .seat')];
+  const center = $('center');
+  if (!desktopMQ.matches) {
+    for (const s of seats) { s.style.left = ''; s.style.top = ''; }
+    center.style.top = '';
+    return;
+  }
+  const ring = $('ring');
+  const W = ring.clientWidth, H = ring.clientHeight;
+  const n = seats.length;
+  const maxW = Math.max(...seats.map((s) => s.offsetWidth));
+  const maxH = Math.max(...seats.map((s) => s.offsetHeight));
+  const rx = Math.max(0, W / 2 - maxW / 2 - 12);
+  const ry = Math.max(0, H / 2 - maxH / 2 - 8);
+  seats.forEach((s, k) => {
+    const a = Math.PI / 2 + (k * 2 * Math.PI) / n; // k = 0 : en bas, puis sens horaire
+    s.style.left = `${W / 2 + rx * Math.cos(a)}px`;
+    s.style.top = `${H / 2 + ry * Math.sin(a)}px`;
+  });
+  // Centre (pioche + consignes) placé entre le joueur du haut et ma main
+  const meTop = seats[0] ? seats[0].offsetTop - seats[0].offsetHeight / 2 : H;
+  const topSeat = n % 2 === 0 ? seats[n / 2] : null;
+  const topBottom = topSeat ? topSeat.offsetTop + topSeat.offsetHeight / 2 : 0;
+  center.style.top = `${(topBottom + meTop) / 2}px`;
+}
+window.addEventListener('resize', () => S?.game && layoutRing());
+
+/* ---------- Effets visuels (échanges, Dutch…) ---------- */
+const marks = new Map(); // "pid:slot" -> { cls, until }
+const nameOf = (pid) => S?.game?.players.find((p) => p.id === pid)?.name || '?';
+const slotEl = (t) => document.querySelector(`#seats .card[data-pid="${t.pid}"][data-slot="${t.slot}"]`);
+
+function markSlots(targets, cls, ms) {
+  const until = Date.now() + ms;
+  for (const t of targets) marks.set(`${t.pid}:${t.slot}`, { cls, until });
+  render();
+  setTimeout(render, ms + 50);
+}
+
+function flyCard(fromEl, toEl, delay = 0) {
+  if (!fromEl || !toEl) return;
+  const a = fromEl.getBoundingClientRect(), b = toEl.getBoundingClientRect();
+  const c = document.createElement('div');
+  c.className = 'card back flying';
+  Object.assign(c.style, { left: `${a.left}px`, top: `${a.top}px`, width: `${a.width}px`, height: `${a.height}px` });
+  document.body.appendChild(c);
+  const anim = c.animate([
+    { transform: 'translate(0,0) scale(1)' },
+    { transform: `translate(${(b.left - a.left) / 2}px, ${(b.top - a.top) / 2 - 40}px) scale(1.15)`, offset: 0.5 },
+    { transform: `translate(${b.left - a.left}px, ${b.top - a.top}px) scale(${b.width / a.width})` },
+  ], { duration: 900, delay, easing: 'ease-in-out', fill: 'forwards' });
+  anim.onfinish = () => c.remove();
+}
+
+let bannerT;
+function banner(html, cls = '') {
+  const b = $('banner');
+  b.innerHTML = html;
+  b.className = `show ${cls}`;
+  clearTimeout(bannerT);
+  bannerT = setTimeout(() => (b.className = ''), 4500);
+}
+
+const who = (pid) => (pid === S.me ? 'Tu' : `<b>${esc(nameOf(pid))}</b>`);
+function cardOf(t, by) {
+  if (t.pid === S.me) return '<b>ta carte</b>';
+  if (t.pid === by) return 'sa carte';
+  return `la carte de <b>${esc(nameOf(t.pid))}</b>`;
+}
+
+socket.on('fx', (fx) => {
+  if (!S?.game) return;
+  const me = fx.by === S.me;
+  if (fx.kind === 'swap') {
+    const verb = me ? 'as échangé' : 'a échangé';
+    banner(`🔄 ${who(fx.by)} ${verb} ${cardOf(fx.a, fx.by)} et ${cardOf(fx.b, fx.by)}${fx.power === 'J' ? ' (Valet)' : ' (Roi noir)'}`, 'swap');
+    requestAnimationFrame(() => {
+      const ea = slotEl(fx.a), eb = slotEl(fx.b);
+      flyCard(ea, eb);
+      flyCard(eb, ea);
+      markSlots([fx.a, fx.b], 'swapped', 4000);
+    });
+  } else if (fx.kind === 'replace') {
+    if (!me) banner(`${who(fx.by)} a remplacé une de ses cartes`);
+    requestAnimationFrame(() => {
+      flyCard($('deck'), slotEl(fx.target));
+      markSlots([fx.target], 'replaced', 2500);
+    });
+  } else if (fx.kind === 'look') {
+    if (!me) banner(`👁 ${who(fx.by)} regarde ${fx.target.pid === fx.by ? 'une de ses cartes' : cardOf(fx.target, fx.by)}`);
+    markSlots([fx.target], 'looked', 2500);
+  } else if (fx.kind === 'dutch') {
+    banner(`📣 ${who(fx.by)} ${me ? 'as' : 'a'} annoncé <b>DUTCH !</b> Dernier tour.`, 'dutch');
+  }
+});
 
 function renderOverlay() {
   const g = S.game;
@@ -344,7 +446,7 @@ $('table').addEventListener('click', (e) => {
   }
 });
 
-$('btn-fast').onclick = () => { fastMode = !fastMode; sel = []; render(); };
+btnFast.onclick = () => { fastMode = !fastMode; sel = []; render(); };
 $('btn-log').onclick = () => $('log').classList.toggle('hidden');
 
 let toastT;
