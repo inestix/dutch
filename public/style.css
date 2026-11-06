@@ -296,3 +296,13 @@ input::placeholder { color: #b98f86; }
   .dutch-btn { left: calc(100% + 8px); font-size: 15px; padding: 12px 12px 10px; }
 }
 #prompt-text small { font-size: 13px; color: var(--plum-soft); }
+
+/* Ordinateur avec un écran peu haut (ex. 1366×768) : cartes un peu plus petites pour que tout tienne */
+@media (min-width: 1000px) and (max-height: 860px) {
+  :root { --cw: 62px; --ch: 87px; --ocw: 44px; --och: 62px; --dw: 88px; --dh: 124px; }
+  #ring { min-height: 560px; }
+  #prompt { padding: 8px 10px; gap: 6px; }
+  #prompt-text { font-size: 14px; }
+  .btn { padding: 8px 16px; }
+  .dutch-btn { font-size: 17px; padding: 13px 18px 11px; }
+}

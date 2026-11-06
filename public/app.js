@@ -1,13 +1,11 @@
 /* Client du Dutch en ligne */
 const socket = io();
 const $ = (id) => document.getElementById(id);
-const btnFast = $('btn-fast');
 const TOKEN_KEY = 'dutch-token';
 const PEEK_MS = 4000;
 const FLASH_MS = 2500;
 
 let S = null;            // dernier état reçu
-let fastMode = false;    // défausse rapide armée
 let sel = [];            // cibles sélectionnées (Valet / Roi noir)
 const peeks = new Map(); // "pid:slot" -> { card, until }
 const flashes = new Map();
@@ -66,7 +64,7 @@ socket.on('state', (s) => {
   const prevPhase = S?.game?.phase;
   S = s;
   const g = s.game;
-  if (!g || g.phase !== 'play') { fastMode = false; sel = []; }
+  if (!g || g.phase !== 'play') sel = [];
   if (g && prevPhase !== g.phase && g.phase === 'peek') { peeks.clear(); flashes.clear(); marks.clear(); }
   if (!activePower()) sel = [];
   if (g?.highlight && g.highlight.seq !== hlSeq) {
@@ -169,18 +167,21 @@ function activePower() {
   return null;
 }
 
-function isSelectable(pid, slot) {
+// Ce que fait un clic sur une carte : utiliser un pouvoir, échanger avec la carte piochée,
+// ou sinon tenter une défausse rapide (un seul clic, sans bouton).
+function clickAction(pid) {
   const g = S.game;
-  if (g.phase !== 'play') return false;
-  if (fastMode) return true;
+  if (g.phase !== 'play') return null;
   const ap = activePower();
   if (ap) {
-    if (ap.type === '7') return pid === S.me;
-    if (ap.type === '10') return pid !== S.me;
-    return true; // Valet, Roi noir : deux cartes au choix
+    if (ap.type === '7') return pid === S.me ? 'power' : null;
+    if (ap.type === '10') return pid !== S.me ? 'power' : null;
+    return 'power'; // Valet, Roi noir : deux cartes au choix
   }
-  return g.turn === S.me && g.step === 'drawn' && pid === S.me;
+  if (g.turn === S.me && g.step === 'drawn' && pid === S.me) return 'swap';
+  return 'fast';
 }
+function isSelectable(pid) { return !!clickAction(pid); }
 
 function renderHand(p, interactive = true) {
   const g = S.game;
@@ -195,7 +196,7 @@ function renderHand(p, interactive = true) {
     if (hl) cls.push('hl');
     const mk = interactive && marks.get(key);
     if (mk && mk.until > now) cls.push(mk.cls);
-    if (interactive && isSelectable(p.id, i)) cls.push('selectable');
+    if (interactive && isSelectable(p.id)) cls.push('selectable');
     if (sel.some((t) => t.pid === p.id && t.slot === i)) cls.push('selected');
     const data = interactive ? `data-pid="${p.id}" data-slot="${i}"` : '';
     let face = null;
@@ -284,10 +285,7 @@ function renderTable() {
     }
   } else if (g.phase === 'play') {
     const ap = activePower();
-    if (fastMode) {
-      text = `⚡ Clique sur une carte (la tienne ou celle d'un autre) de même valeur que la défausse.`;
-      btns.push(['Annuler', 'ghost', () => { fastMode = false; render(); }]);
-    } else if (ap) {
+    if (ap) {
       text = (ap.fast ? '⚡ Défausse rapide réussie ! ' : '') + POWER_TXT[ap.type];
       btns.push(['Passer le pouvoir', 'ghost', () => { sel = []; act({ type: 'skip', fast: ap.fast }); }]);
     } else if (myTurn && g.step === 'start') {
@@ -301,7 +299,8 @@ function renderTable() {
       text = `Au tour de <b>${esc(cur.name)}</b>${g.someoneDrawn ? ' (a pioché)' : ''}${g.step === 'power' ? ' (utilise un pouvoir)' : ''}.`;
       if (isHost && curOff) btns.push([`Passer le tour de ${cur.name}`, 'ghost', () => act({ type: 'force' })]);
     }
-    if (g.dutchBy && !ap && !fastMode) {
+    if (!ap) text += `<br><small>⚡ Défausse rapide : clique directement sur une carte de même valeur que la défausse.</small>`;
+    if (g.dutchBy && !ap) {
       const stop = g.players.find((p) => p.id === g.dutchStop);
       text += `<br><small>📣 Dutch annoncé par <b>${esc(nameOf(g.dutchBy))}</b> : la manche s'arrête quand le tour revient à <b>${stop?.id === S.me ? 'toi' : esc(stop?.name || '?')}</b>.</small>`;
     }
@@ -318,9 +317,6 @@ function renderTable() {
     b.onclick = fn;
     pa.appendChild(b);
   }
-  // Le bouton de défausse rapide reste dans la même rangée que les autres actions
-  if (g.phase === 'play' && !fastMode) pa.appendChild(btnFast); else btnFast.remove();
-  btnFast.classList.toggle('armed', fastMode);
 
   // Journal
   $('log').innerHTML = g.log.map((l) => `<p>${esc(l)}</p>`).join('');
@@ -481,14 +477,10 @@ $('table').addEventListener('click', (e) => {
   const el = e.target.closest('.card[data-pid]');
   if (!el || !S?.game) return;
   const pid = el.dataset.pid, slot = Number(el.dataset.slot);
-  if (!isSelectable(pid, slot)) return;
-  const g = S.game;
-  if (fastMode) {
-    fastMode = false;
-    act({ type: 'fast', target: { pid, slot } });
-    render();
-    return;
-  }
+  const what = clickAction(pid);
+  if (!what) return;
+  if (what === 'fast') return act({ type: 'fast', target: { pid, slot } });
+  if (what === 'swap') return act({ type: 'swap', slot });
   const ap = activePower();
   if (ap) {
     if (ap.type === '7' || ap.type === '10') return act({ type: 'power', fast: ap.fast, targets: [{ pid, slot }] });
@@ -496,12 +488,9 @@ $('table').addEventListener('click', (e) => {
     if (idx >= 0) sel.splice(idx, 1); else sel.push({ pid, slot });
     if (sel.length === 2) { const targets = sel; sel = []; act({ type: 'power', fast: ap.fast, targets }); }
     render();
-    return;
   }
-  if (g.turn === S.me && g.step === 'drawn') act({ type: 'swap', slot });
 });
 
-btnFast.onclick = () => { fastMode = !fastMode; sel = []; render(); };
 $('btn-log').onclick = () => $('log').classList.toggle('hidden');
 
 let toastT;
