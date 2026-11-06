@@ -62,10 +62,13 @@ socket.on('connect', () => {
 });
 socket.on('state', (s) => {
   const prevPhase = S?.game?.phase;
+  const prevFast = S?.game?.myFastPowers?.length || 0;
   S = s;
   const g = s.game;
   if (!g || g.phase !== 'play') sel = [];
   if (g && prevPhase !== g.phase && g.phase === 'peek') { peeks.clear(); flashes.clear(); marks.clear(); }
+  // Un pouvoir rapide vient d’être utilisé ou passé : on revient au mode défausse rapide
+  if (pendingFastPowers().length < prevFast || !pendingFastPowers().length) usingFastPower = false;
   if (!activePower()) sel = [];
   if (g?.highlight && g.highlight.seq !== hlSeq) {
     hlSeq = g.highlight.seq;
@@ -159,11 +162,19 @@ function slotPos(i) {
 }
 
 // Pouvoir que je dois utiliser maintenant : celui de mon tour, ou celui gagné par une défausse rapide
+// Les pouvoirs gagnés en défausse rapide restent en attente : on peut enchaîner
+// plusieurs défausses rapides, puis cliquer sur « Utiliser le pouvoir » quand on veut.
+let usingFastPower = false;
+function pendingFastPowers() {
+  const g = S?.game;
+  return g && g.phase === 'play' && g.myFastPowers ? g.myFastPowers : [];
+}
 function activePower() {
   const g = S?.game;
   if (!g || g.phase !== 'play') return null;
   if (g.turn === S.me && g.step === 'power') return { type: g.pending, fast: false };
-  if (g.myFastPowers && g.myFastPowers.length) return { type: g.myFastPowers[0], fast: true };
+  const fp = pendingFastPowers();
+  if (fp.length && usingFastPower) return { type: fp[0], fast: true };
   return null;
 }
 
@@ -174,8 +185,9 @@ function clickAction(pid) {
   if (g.phase !== 'play') return null;
   const ap = activePower();
   if (ap) {
-    if (ap.type === '7') return pid === S.me ? 'power' : null;
-    if (ap.type === '10') return pid !== S.me ? 'power' : null;
+    // 7 / 10 : les cartes qui ne sont pas des cibles servent encore à la défausse rapide
+    if (ap.type === '7') return pid === S.me ? 'power' : 'fast';
+    if (ap.type === '10') return pid !== S.me ? 'power' : 'fast';
     return 'power'; // Valet, Roi noir : deux cartes au choix
   }
   if (g.turn === S.me && g.step === 'drawn' && pid === S.me) return 'swap';
@@ -285,9 +297,18 @@ function renderTable() {
     }
   } else if (g.phase === 'play') {
     const ap = activePower();
+    const fp = pendingFastPowers();
     if (ap) {
-      text = (ap.fast ? '⚡ Défausse rapide réussie ! ' : '') + POWER_TXT[ap.type];
-      btns.push(['Passer le pouvoir', 'ghost', () => { sel = []; act({ type: 'skip', fast: ap.fast }); }]);
+      text = POWER_TXT[ap.type];
+      if (ap.fast) btns.push(['Plus tard', 'ghost', () => { usingFastPower = false; sel = []; render(); }]);
+      btns.push(['Passer le pouvoir', 'ghost', () => { sel = []; usingFastPower = false; act({ type: 'skip', fast: ap.fast }); }]);
+    } else if (fp.length) {
+      const names = { '7': 'du 7', '10': 'du 10', J: 'du Valet', K: 'du Roi noir' };
+      text = `⚡ Tu as gagné ${fp.length > 1 ? `${fp.length} pouvoirs (d'abord celui ${names[fp[0]]})` : `le pouvoir ${names[fp[0]]}`}. Continue tes défausses rapides, puis utilise-le quand tu veux.`;
+      btns.push(['Utiliser le pouvoir', 'primary', () => { usingFastPower = true; sel = []; render(); }]);
+      btns.push(['Passer', 'ghost', () => act({ type: 'skip', fast: true })]);
+      if (myTurn && g.step === 'start') btns.push(['Piocher', 'primary', () => act({ type: 'draw' })]);
+      if (myTurn && g.step === 'drawn') btns.push(['Défausser', 'primary', () => act({ type: 'discard' })]);
     } else if (myTurn && g.step === 'start') {
       text = g.dutchBy ? '<b>Dernier tour !</b> Pioche une carte.' : '<b>À toi de jouer !</b> Pioche une carte.';
       btns.push(['Piocher', 'primary', () => act({ type: 'draw' })]);
@@ -299,7 +320,6 @@ function renderTable() {
       text = `Au tour de <b>${esc(cur.name)}</b>${g.someoneDrawn ? ' (a pioché)' : ''}${g.step === 'power' ? ' (utilise un pouvoir)' : ''}.`;
       if (isHost && curOff) btns.push([`Passer le tour de ${cur.name}`, 'ghost', () => act({ type: 'force' })]);
     }
-    if (!ap) text += `<br><small>⚡ Défausse rapide : clique directement sur une carte de même valeur que la défausse.</small>`;
     if (g.dutchBy && !ap) {
       const stop = g.players.find((p) => p.id === g.dutchStop);
       text += `<br><small>📣 Dutch annoncé par <b>${esc(nameOf(g.dutchBy))}</b> : la manche s'arrête quand le tour revient à <b>${stop?.id === S.me ? 'toi' : esc(stop?.name || '?')}</b>.</small>`;
