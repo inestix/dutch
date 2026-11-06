@@ -68,7 +68,7 @@ socket.on('state', (s) => {
   const g = s.game;
   if (!g || g.phase !== 'play') { fastMode = false; sel = []; }
   if (g && prevPhase !== g.phase && g.phase === 'peek') { peeks.clear(); flashes.clear(); marks.clear(); }
-  if (g && g.step !== 'power') sel = [];
+  if (!activePower()) sel = [];
   if (g?.highlight && g.highlight.seq !== hlSeq) {
     hlSeq = g.highlight.seq;
     hlUntil = Date.now() + 1400;
@@ -160,19 +160,26 @@ function slotPos(i) {
   return { col: 3 + Math.floor((i - 4) / 2), row: ((i - 4) % 2) + 1 };
 }
 
+// Pouvoir que je dois utiliser maintenant : celui de mon tour, ou celui gagné par une défausse rapide
+function activePower() {
+  const g = S?.game;
+  if (!g || g.phase !== 'play') return null;
+  if (g.turn === S.me && g.step === 'power') return { type: g.pending, fast: false };
+  if (g.myFastPowers && g.myFastPowers.length) return { type: g.myFastPowers[0], fast: true };
+  return null;
+}
+
 function isSelectable(pid, slot) {
   const g = S.game;
   if (g.phase !== 'play') return false;
   if (fastMode) return true;
-  const myTurn = g.turn === S.me;
-  if (!myTurn) return false;
-  if (g.step === 'drawn') return pid === S.me;
-  if (g.step === 'power') {
-    if (g.pending === '7') return pid === S.me;
-    if (g.pending === '10') return pid !== S.me;
-    if (g.pending === 'J' || g.pending === 'K') return true;
+  const ap = activePower();
+  if (ap) {
+    if (ap.type === '7') return pid === S.me;
+    if (ap.type === '10') return pid !== S.me;
+    return true; // Valet, Roi noir : deux cartes au choix
   }
-  return false;
+  return g.turn === S.me && g.step === 'drawn' && pid === S.me;
 }
 
 function renderHand(p, interactive = true) {
@@ -216,9 +223,15 @@ function seatHtml(p, mine) {
     off ? '<span class="badge off">hors ligne</span>' : '',
     g.phase === 'peek' && p.ready ? '<span class="badge">prêt</span>' : '',
   ].join('');
+  // Bouton « Dutch » placé hors de mon cadre, à droite de ma main ; disponible à tout moment pendant la manche
+  const canDutch = g.phase === 'play' && !g.dutchBy;
+  const dutchBtn = mine
+    ? `<button class="dutch-btn" data-dutch ${canDutch ? '' : 'disabled'} title="Annoncer Dutch">Dutch&nbsp;!</button>`
+    : '';
   return `<div class="seat ${mine ? 'mine' : ''} ${g.turn === p.id && g.phase === 'play' ? 'turn' : ''} ${off ? 'offline' : ''}">
     <div class="seat-head"><span class="nm">${esc(p.name)}${mine ? ' (toi)' : ''}</span><span class="pts">${p.total} pts</span>${badges}</div>
     ${renderHand(p)}
+    ${dutchBtn}
   </div>`;
 }
 
@@ -270,24 +283,27 @@ function renderTable() {
       if (isHost) btns.push(['Forcer le départ', 'ghost', () => act({ type: 'force' })]);
     }
   } else if (g.phase === 'play') {
+    const ap = activePower();
     if (fastMode) {
       text = `⚡ Clique sur une carte (la tienne ou celle d'un autre) de même valeur que la défausse.`;
       btns.push(['Annuler', 'ghost', () => { fastMode = false; render(); }]);
+    } else if (ap) {
+      text = (ap.fast ? '⚡ Défausse rapide réussie ! ' : '') + POWER_TXT[ap.type];
+      btns.push(['Passer le pouvoir', 'ghost', () => { sel = []; act({ type: 'skip', fast: ap.fast }); }]);
     } else if (myTurn && g.step === 'start') {
-      text = g.dutchBy ? '<b>Dernier tour !</b> Pioche une carte.' : '<b>À toi de jouer !</b> Pioche une carte ou annonce Dutch.';
+      text = g.dutchBy ? '<b>Dernier tour !</b> Pioche une carte.' : '<b>À toi de jouer !</b> Pioche une carte.';
       btns.push(['Piocher', 'primary', () => act({ type: 'draw' })]);
-      if (!g.dutchBy) btns.push(['Dutch !', 'danger', () => { if (confirm('Annoncer Dutch ? Si tu n\'as pas le plus petit score, tes points seront doublés.')) act({ type: 'dutch' }); }]);
     } else if (myTurn && g.step === 'drawn') {
-      const pw = g.drawnPower ? ` Si tu la défausses, tu actives son pouvoir.` : '';
+      const pw = ' La carte qui part à la défausse active son pouvoir (7, 10, Valet, Roi noir).';
       text = `Clique sur une de tes cartes pour l'échanger, ou défausse la carte piochée.${pw}`;
       btns.push(['Défausser', 'primary', () => act({ type: 'discard' })]);
-    } else if (myTurn && g.step === 'power') {
-      text = POWER_TXT[g.pending];
-      btns.push(['Passer le pouvoir', 'ghost', () => act({ type: 'skip' })]);
     } else {
       text = `Au tour de <b>${esc(cur.name)}</b>${g.someoneDrawn ? ' (a pioché)' : ''}${g.step === 'power' ? ' (utilise un pouvoir)' : ''}.`;
-      if (g.dutchBy) text += ' Dutch a été annoncé !';
       if (isHost && curOff) btns.push([`Passer le tour de ${cur.name}`, 'ghost', () => act({ type: 'force' })]);
+    }
+    if (g.dutchBy && !ap && !fastMode) {
+      const stop = g.players.find((p) => p.id === g.dutchStop);
+      text += `<br><small>📣 Dutch annoncé par <b>${esc(nameOf(g.dutchBy))}</b> : la manche s'arrête quand le tour revient à <b>${stop?.id === S.me ? 'toi' : esc(stop?.name || '?')}</b>.</small>`;
     }
   } else {
     text = 'Manche terminée.';
@@ -412,7 +428,11 @@ socket.on('fx', (fx) => {
     if (!me) banner(`👁 ${who(fx.by)} regarde ${fx.target.pid === fx.by ? 'une de ses cartes' : cardOf(fx.target, fx.by)}`);
     markSlots([fx.target], 'looked', 2500);
   } else if (fx.kind === 'dutch') {
-    banner(`📣 ${who(fx.by)} ${me ? 'as' : 'a'} annoncé <b>DUTCH !</b> Dernier tour.`, 'dutch');
+    const stop = fx.stop === S.me ? 'toi' : esc(nameOf(fx.stop));
+    banner(`📣 ${who(fx.by)} ${me ? 'as' : 'a'} annoncé <b>DUTCH !</b> Fin de la manche quand le tour revient à ${stop}.`, 'dutch');
+  } else if (fx.kind === 'gotPower') {
+    const names = { '7': 'du 7', '10': 'du 10', J: 'du Valet', K: 'du Roi noir' };
+    banner(`⚡ Défausse rapide réussie : tu gagnes le pouvoir <b>${names[fx.power]}</b> !`);
   }
 });
 
@@ -453,6 +473,11 @@ function renderOverlay() {
 
 /* ---------- Clics sur les cartes ---------- */
 $('table').addEventListener('click', (e) => {
+  const star = e.target.closest('[data-dutch]');
+  if (star && !star.disabled) {
+    if (confirm("Annoncer Dutch ? La manche s'arrêtera quand le tour reviendra au joueur en train de jouer. Si tu n'as pas le plus petit score, tes points seront doublés.")) act({ type: 'dutch' });
+    return;
+  }
   const el = e.target.closest('.card[data-pid]');
   if (!el || !S?.game) return;
   const pid = el.dataset.pid, slot = Number(el.dataset.slot);
@@ -464,14 +489,16 @@ $('table').addEventListener('click', (e) => {
     render();
     return;
   }
-  if (g.step === 'drawn') return act({ type: 'swap', slot });
-  if (g.step === 'power') {
-    if (g.pending === '7' || g.pending === '10') return act({ type: 'power', targets: [{ pid, slot }] });
+  const ap = activePower();
+  if (ap) {
+    if (ap.type === '7' || ap.type === '10') return act({ type: 'power', fast: ap.fast, targets: [{ pid, slot }] });
     const idx = sel.findIndex((t) => t.pid === pid && t.slot === slot);
     if (idx >= 0) sel.splice(idx, 1); else sel.push({ pid, slot });
-    if (sel.length === 2) { const targets = sel; sel = []; act({ type: 'power', targets }); }
+    if (sel.length === 2) { const targets = sel; sel = []; act({ type: 'power', fast: ap.fast, targets }); }
     render();
+    return;
   }
+  if (g.turn === S.me && g.step === 'drawn') act({ type: 'swap', slot });
 });
 
 btnFast.onclick = () => { fastMode = !fastMode; sel = []; render(); };

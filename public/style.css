@@ -278,3 +278,21 @@ input::placeholder { color: #b98f86; }
 
 .logo.small-logo { font-size: 24px; }
 .small-logo span { color: var(--pink); }
+
+/* Bouton « Dutch » : hors du cadre de ma main, sur sa droite */
+.seat.mine { position: relative; }
+.dutch-btn {
+  position: absolute; left: calc(100% + 16px); top: 50%; transform: translateY(-50%);
+  white-space: nowrap; cursor: pointer;
+  font-family: 'Shrikhand', serif; font-size: 20px; line-height: 1; letter-spacing: .5px;
+  padding: 16px 22px 14px; border-radius: 999px;
+  background: var(--pink); color: var(--cream-2); border: 2px solid var(--plum);
+  box-shadow: 4px 4px 0 var(--plum); transition: transform .1s, box-shadow .1s, background .15s;
+}
+.dutch-btn:hover { background: var(--pink-dark); }
+.dutch-btn:active { transform: translateY(-50%) translate(2px, 2px); box-shadow: 2px 2px 0 var(--plum); }
+.dutch-btn:disabled { background: #d8bcae; color: var(--cream-2); border-color: var(--plum-soft); box-shadow: none; cursor: not-allowed; }
+@media (max-width: 560px) {
+  .dutch-btn { left: calc(100% + 8px); font-size: 15px; padding: 12px 12px 10px; }
+}
+#prompt-text small { font-size: 13px; color: var(--plum-soft); }

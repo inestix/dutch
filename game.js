@@ -83,6 +83,8 @@ class Game {
     this.drawn = null;
     this.pending = null;
     this.dutchBy = null;
+    this.dutchStop = null;
+    this.fastPowers = {}; // pid -> pouvoirs gagnés par défausse rapide, en attente
     this.roundResult = null;
     this.hl = null;
     this.addLog(`— Manche ${this.round} —`);
@@ -131,12 +133,15 @@ class Game {
         return null;
       }
       case 'dutch': {
-        if (!this.isTurn(pid, 'start')) return "Tu ne peux annoncer Dutch qu'au début de ton tour";
+        // Dutch peut être annoncé à tout moment ; le tour de table continue
+        // jusqu'au joueur qui était en train de jouer au moment de l'annonce.
+        if (this.phase !== 'play') return 'Pas maintenant';
         if (this.dutchBy) return 'Dutch a déjà été annoncé';
         this.dutchBy = pid;
-        this.addLog(`📣 ${me.name} annonce DUTCH ! Dernier tour pour les autres.`);
-        this.emit('all', 'fx', { kind: 'dutch', by: pid });
-        this.endTurn();
+        this.dutchStop = this.turn;
+        const cur = this.players[this.turn];
+        this.addLog(`📣 ${me.name} annonce DUTCH ! La manche s'arrête quand le tour revient à ${cur.name}.`);
+        this.emit('all', 'fx', { kind: 'dutch', by: pid, stop: cur.id });
         return null;
       }
       case 'swap': {
@@ -150,7 +155,14 @@ class Game {
         this.highlight('swap', [t]);
         this.emit('all', 'fx', { kind: 'replace', by: pid, target: t, old });
         this.addLog(`${me.name} remplace sa carte n°${a.slot + 1} et défausse ${label(old)}.`);
-        this.endTurn();
+        // La carte qui sort de la main active aussi son pouvoir
+        const pw = power(old);
+        if (pw) {
+          this.step = 'power';
+          this.pending = pw;
+        } else {
+          this.endTurn();
+        }
         return null;
       }
       case 'discard': {
@@ -169,12 +181,33 @@ class Game {
         return null;
       }
       case 'skip': {
+        if (a.fast) {
+          const q = this.fastPowers[pid];
+          if (!q || !q.length) return 'Aucun pouvoir en attente';
+          q.shift();
+          this.addLog(`${me.name} n'utilise pas le pouvoir.`);
+          return null;
+        }
         if (!this.isTurn(pid, 'power')) return 'Pas maintenant';
         this.addLog(`${me.name} n'utilise pas le pouvoir.`);
         this.endTurn();
         return null;
       }
-      case 'power': return this.usePower(pid, a.targets);
+      case 'power': {
+        if (a.fast) {
+          // Pouvoir gagné par une défausse rapide : utilisable même hors de son tour
+          if (this.phase !== 'play') return 'Pas maintenant';
+          const q = this.fastPowers[pid];
+          if (!q || !q.length) return 'Aucun pouvoir en attente';
+          const err = this.applyPower(pid, q[0], a.targets);
+          if (!err) q.shift();
+          return err;
+        }
+        if (!this.isTurn(pid, 'power')) return 'Pas maintenant';
+        const err = this.applyPower(pid, this.pending, a.targets);
+        if (!err) this.endTurn();
+        return err;
+      }
       case 'fast': return this.fastDiscard(pid, a.target);
       default: return 'Action inconnue';
     }
@@ -187,11 +220,10 @@ class Game {
     }
   }
 
-  usePower(pid, targets) {
-    if (!this.isTurn(pid, 'power')) return 'Pas maintenant';
+  // Applique un pouvoir (7, 10, Valet, Roi noir). Ne termine pas le tour.
+  applyPower(pid, p, targets) {
     if (!Array.isArray(targets) || !targets.every((t) => this.validTarget(t))) return 'Cible invalide';
     const me = this.get(pid);
-    const p = this.pending;
 
     if (p === '7' || p === '10') {
       if (targets.length !== 1) return 'Choisis une carte';
@@ -202,7 +234,6 @@ class Game {
       this.highlight('look', [t]);
       this.addLog(`👁 ${me.name} regarde ${t.pid === pid ? 'une de ses cartes' : `une carte de ${this.get(t.pid).name}`}.`);
       this.emit('all', 'fx', { kind: 'look', by: pid, target: t });
-      this.endTurn();
       return null;
     }
 
@@ -221,7 +252,6 @@ class Game {
         const mine = [a, b].filter((t) => t.pid === pid);
         if (mine.length) this.emit(pid, 'peek', { cards: mine.map((t) => ({ ...t, card: me.hand[t.slot] })) });
       }
-      this.endTurn();
       return null;
     }
     return 'Aucun pouvoir en attente';
@@ -240,6 +270,11 @@ class Game {
     if (card.rank === top.rank) {
       owner.hand[t.slot] = null;
       this.discard.push(card);
+      const pw = power(card);
+      if (pw) {
+        (this.fastPowers[pid] ||= []).push(pw);
+        this.emit(pid, 'fx', { kind: 'gotPower', by: pid, power: pw });
+      }
       if (own) {
         this.addLog(`⚡ ${me.name} défausse rapidement ${label(card)} !`);
         this.highlight('fast', []);
@@ -287,7 +322,7 @@ class Game {
     this.pending = null;
     this.step = 'start';
     const next = (this.turn + 1) % this.players.length;
-    if (this.dutchBy && this.players[next].id === this.dutchBy) {
+    if (this.dutchBy && next === this.dutchStop) {
       this.endRound();
       return;
     }
@@ -335,6 +370,8 @@ class Game {
       step: this.step,
       pending: this.pending,
       dutchBy: this.dutchBy,
+      dutchStop: this.dutchBy ? this.players[this.dutchStop].id : null,
+      myFastPowers: (this.fastPowers && this.fastPowers[pid]) || [],
       players: this.players.map((p) => ({
         id: p.id,
         name: p.name,
